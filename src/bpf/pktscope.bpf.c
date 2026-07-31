@@ -261,7 +261,9 @@ static __always_inline int tap(struct __sk_buff *skb, __u8 dir)
 	 * passed to the helper. The barrier makes the value opaque FIRST —
 	 * otherwise clang elides the clamp as provably dead, or fuses the
 	 * range check into a decremented copy, and the branch refinement
-	 * lands on a different register than the call argument.
+	 * lands on a different register than the call argument. The signed
+	 * lower-bound compare matters too: pre-6.8 verifiers don't lift umin
+	 * on a != 0 branch, but have always refined JSGT.
 	 */
 	bpf_skb_pull_data(skb, skb->len);
 	__u32 copy = caplen;
@@ -269,7 +271,7 @@ static __always_inline int tap(struct __sk_buff *skb, __u8 dir)
 	if (copy > CAP) {
 		copy = CAP;
 	}
-	if (copy > 0 &&
+	if ((__s32)copy > 0 &&
 	    bpf_skb_load_bytes_relative(skb, 0, e->data, copy, anchor) < 0) {
 		e->caplen = 0;
 	}

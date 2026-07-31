@@ -6,7 +6,7 @@ eBPF tap, bundled with esbuild and driven by one `make`.
 
 ```sh
 make           # compile the BPF tap + bundle the JS
-yeet run .     # interface picker (needs root for BPF)
+yeet run .     # interface picker
 yeet run . -- --iface eth0 --port 443 --proto tcp
 ```
 
@@ -112,4 +112,3 @@ and fails if any verifier rejects it. Run the same matrix locally
 
 - Linux with `CONFIG_DEBUG_INFO_BTF` (for `vmlinux.h` generation and
   CO-RE-free BTF loading)
-- root (or CAP_BPF + CAP_NET_ADMIN) to load and attach the tap
