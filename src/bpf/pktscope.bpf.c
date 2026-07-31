@@ -257,12 +257,20 @@ static __always_inline int tap(struct __sk_buff *skb, __u8 dir)
 	/* Loopback/GSO skbs keep the payload paged, and the _relative loader
 	 * only reaches the linear header area (EFAULT past it). Pull the frame
 	 * linear so the payload reads land. The copy length is packet-derived,
-	 * so the explicit [1, CAP] bounds check right before the call is what
-	 * lets the verifier accept a variable-length read into e->data.
+	 * so the verifier needs a [1, CAP] range proven on the exact register
+	 * passed to the helper. The barrier makes the value opaque FIRST —
+	 * otherwise clang elides the clamp as provably dead, or fuses the
+	 * range check into a decremented copy, and the branch refinement
+	 * lands on a different register than the call argument.
 	 */
 	bpf_skb_pull_data(skb, skb->len);
-	if (caplen >= 1 && caplen <= CAP &&
-	    bpf_skb_load_bytes_relative(skb, 0, e->data, caplen, anchor) < 0) {
+	__u32 copy = caplen;
+	barrier_var(copy);
+	if (copy > CAP) {
+		copy = CAP;
+	}
+	if (copy > 0 &&
+	    bpf_skb_load_bytes_relative(skb, 0, e->data, copy, anchor) < 0) {
 		e->caplen = 0;
 	}
 	bpf_ringbuf_submit(e, 0);
