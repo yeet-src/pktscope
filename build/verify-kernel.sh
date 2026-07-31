@@ -44,6 +44,12 @@ fi
 
 # Drop the header row; fail if any program's verdict is not "success".
 if printf '%s\n' "$csv" | tail -n +2 | grep -q ',failure$'; then
+	# Re-run each rejected program verbosely so the CI log carries the
+	# verifier's actual rejection reason, not just the verdict.
+	printf '%s\n' "$csv" | tail -n +2 | grep ',failure$' | cut -d, -f2 | while read -r prog; do
+		echo ">> verifier log for rejected program: $prog"
+		"$VERISTAT" -v -f "$prog" "$OBJ" 2>&1 | tail -n 80 || true
+	done
 	echo "::error::BPF verifier rejected a program on kernel $KREL" >&2
 	exit 1
 fi

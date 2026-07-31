@@ -1,148 +1,115 @@
 # pktscope
 
-A yeet script: a reactive JSX TUI bundled with esbuild, an `@/` source
-alias, and a BPF program — all driven by one `make`.
+A Wireshark-style packet analyzer for the terminal, built as a
+[yeet](https://yeet.cx) script: a reactive JSX TUI fed by a TCX (clsact)
+eBPF tap, bundled with esbuild and driven by one `make`.
 
-The starter is **cpusched**: a live scheduler dashboard. The top is a
-cores × time heatmap of context-switch rate (one row per CPU, newest column
-on the right); pick a CPU (arrows or click) to watch its `prev → next` task
-feed; and a log2 histogram tracks run-queue latency. It's a small but
-complete tour of the layout and of yeet's reactive BPF.
+```sh
+make           # compile the BPF tap + bundle the JS
+yeet run .     # interface picker (needs root for BPF)
+yeet run . -- --iface eth0 --port 443 --proto tcp
+```
 
-## Reactive, both ways + both egress patterns
+Three panes, Wireshark-shaped:
 
-- **kernel → user, streamed** — `probes/cpusched.js` builds the `cpus`
-  signal with `from(state => { …events.subscribe…; return cleanup })`: a
-  ring-buffer subscription expressed as a reactive signal whose lifecycle is
-  tied to the UI watching it. A window timer turns the stream into per-CPU
-  rates, histories, and feeds.
-- **kernel → user, polled** — `probes/runqlat.js` reads a histogram the
-  kernel aggregates in an array map (`ArrayMap.lookup` on a timer) — the
-  other egress pattern. Its program lives in a second `.bpf.c`.
-- **user → kernel** — `+`/`-` call `setMinSlice()`, which `DataSec.patch()`es
-  the `min_slice_ns` global in the *running* program's `.data` section. The
-  kernel then only emits switches whose outgoing task ran that long — a filter
-  you cannot do in userspace, since JS only sees events the kernel emitted.
+- **Packet list** — live rows colored by what the payload was identified
+  as: TLS records (with SNI), HTTP/1 (request/status + headers), HTTP/2
+  preface + frames, DNS queries/responses, ARP. Columns drop by priority
+  as the terminal narrows.
+- **Protocol detail tree** — folding sections (Frame / Ethernet / IP /
+  TCP·UDP·ARP / Payload); every field carries the byte range it decodes.
+- **Hex pane** — every byte colored by the section it belongs to
+  (ethernet / IP / L4 / payload), with the field selected in the tree
+  highlighted byte-for-byte.
 
-## Two BPF programs, one object
+## Capture
 
-`src/bpf/*.bpf.c` are independent units that `bpftool gen object` links into
-one `bin/probe.bpf.o`: `cpusched.bpf.c` (the sched_switch stream + the knob)
-and `runqlat.bpf.c` (wakeup→on-CPU latency). Add another `.bpf.c` and it's
-linked in automatically — keep `char LICENSE[]` in exactly one unit, and
-give each program a unique name. `probes/probe.js` loads the object once and
-shares its `control`; each probe module attaches its own maps.
+The tap (`src/bpf/pktscope.bpf.c`) attaches TCX ingress + egress hooks and
+streams full frames (up to 1536 B) to a ring buffer. Where the snap starts
+is per-interface:
+
+- **Ethernet-framed devices** (incl. loopback, veth, bridges, tap) capture
+  from the MAC header — link-level frames like ARP come through and are
+  fully decoded.
+- **Raw-IP tunnel devices** (`tunl*`/`ipip`/`gre`/`tun`/`wg`) capture from
+  the network header, where tcpdump-era assumptions about an Ethernet
+  header break.
+
+The program is a passive observer: it always returns `TCX_NEXT`, never
+dropping or altering traffic. Kernel-side port/proto filters (from
+`--port` / `--proto`) keep uninteresting traffic out of the ring entirely.
+
+## Keys & mouse
+
+- **Picker**: `↑↓` select · `⏎`/`→` capture
+- **List**: `↑↓`/`jk` packet · `→`/`⇥` fields pane · `f` follow tail ·
+  `p` pause · `/` filter · `c` clear · `1·2·3` toggle panes · `z` zoom ·
+  `+`/`-` resize · `←`/`esc` back · `q` quit
+- **Fields**: `↑↓` field · `→` open/descend · `←` fold/back · `⏎` toggle fold
+- **Mouse**: the wheel scrolls the pane under the cursor (including the
+  bytes pane), click selects, dragging a pane divider resizes it.
+
+## Display filter
+
+`/` opens a filter. Space-separated terms AND together; `!` negates;
+anything unrecognized is a substring match over the packet's decoded text
+and printable payload — so a bare `ClaudeBot` or `10.0.0.7` just works.
+
+```
+tls http1 http2 dns text arp     identified kind / frame type
+tcp udp icmp                     l4 protocol
+port 443  host 10.0.0.1          endpoints (src/dst work too)
+sni example.com  ua ClaudeBot    decoded fields
+syn rst fin ack  rx tx  data     tcp flags, direction, has-payload
+len>500  !ack                    length compare, negation
+```
 
 ## Layout
 
 ```
-Makefile              build frontend — orchestrates the two compilers
-build/bpf.mk          clang + bpftool rules: src/bpf/*.bpf.c -> bin/probe.bpf.o
-build/gen-vmlinux.sh  generates src/bpf/include/vmlinux.h from kernel BTF
-package.json          project manifest + optional npm/jsr deps
-tsconfig.json         `#/` -> project root, `@/` -> ./src path aliases
-src/main.jsx          entry — composition root: input + mount
-src/probes/probe.js   loads the shared BPF object (binds maps, start())
-src/probes/cpusched.js  sched_switch stream → signals + the DataSec knob
-src/probes/runqlat.js   polls the run-queue-latency histogram map
-src/components/*.jsx   pure UI: titlebar, heatmap, detail, histogram, footer
-src/lib/format.js     pure render helpers (rate, duration, heat color)
-src/bpf/cpusched.bpf.c  sched_switch program + the runtime knob
-src/bpf/runqlat.bpf.c   wakeup→on-CPU latency histogram
-bin/                  the linked BPF object lands here
-.github/workflows/kernel-matrix.yml  CI: verify the object across kernels
-build/verify-kernel.sh  the in-VM gate that workflow runs
+Makefile                build frontend — clang/bpftool + esbuild
+build/                  toolchain resolution, BPF rules, kernel-matrix CI
+src/main.jsx            entry — composition root: input, layout, mount
+src/probes/tap.js       loads bin/probe.bpf.o, arms the scope, streams packets
+src/probes/capture.js   capture session state: packet ring + UI signals
+src/probes/ifaces.js    interface inventory for the picker (kind, rates, L2)
+src/components/*.jsx    pure UI: list, detail tree, hex pane, picker, chrome
+src/lib/proto.js        pure dissection: ethernet/ARP/IP/TCP/UDP + payload ID
+src/lib/filter.js       display-filter compiler
+src/lib/format.js       palette + table/format helpers
+src/bpf/pktscope.bpf.c  the TCX tap
 ```
 
-The JS is layered: `probes/` is the only BPF-aware code (it owns the object
-and exposes plain signals), `components/` is pure presentation that reads
-those signals, and `lib/` is pure helpers. They reference each other through
-the `@/` alias; `main.jsx` wires them together and owns input.
+The JS is layered: `probes/` is the only BPF-aware code (it owns the
+object and exposes plain signals), `components/` is pure presentation, and
+`lib/` is pure parsing/formatting. `@/` (source root) and `#/` (project
+root) are bundle-time aliases esbuild resolves via tsconfig `paths`; the
+BPF object is located at runtime with `import.meta.dirname`.
 
-## Build & run
-
-```sh
-make           # compile BPF (clang + bpftool) + bundle JS (esbuild)
-yeet run .     # runs the bundled src/index.jsx (needs root for BPF)
-```
+## Build
 
 `make` runs two independent compilers: **clang + bpftool** compile
-`src/bpf/*.bpf.c` and link them into one loadable object `bin/probe.bpf.o`;
-**esbuild** bundles `src/main.jsx` into `src/index.jsx`, resolving the `@/`
-alias (and inlining any npm/jsr deps you add) and leaving `yeet:*` builtins
-external. esbuild is vendored by the toolchain, so the build needs no
-node/npm.
-
-The data layer loads the object at runtime:
-
-```js
-const probe = new BpfObject({ exe: "../bin/probe.bpf.o", base: import.meta.dirname });
-const control = await probe
-  .bind("events", { kind: "ringbuf", btf_struct: "sched_event" })
-  .bind("probe.data", { kind: "data" })   // the .data section that holds the knob
-  .start();                                // the tracepoint auto-attaches
-```
-
-`base: import.meta.dirname` resolves the path against the running bundle.
-`probe.data` is libbpf's name for this object's `.data` section (confirm with
-`bpftool btf dump file bin/probe.bpf.o` if you rename things).
+`src/bpf/pktscope.bpf.c` into the loadable object `bin/probe.bpf.o`, and
+**esbuild** bundles `src/main.jsx` into `src/index.jsx`, leaving `yeet:*`
+builtins external. clang, bpftool, and esbuild come from a static,
+checksum-pinned toolchain (`build/toolchain.lock`) — the build needs no
+system C toolchain and no node/npm.
 
 ## Testing across kernels
 
-Run `make veristat` to load `bin/probe.bpf.o` with veristat on **your** kernel —
-a quick check that every program passes the verifier, plus per-program
-complexity (insns/states). It needs privileges to load programs, so use `sudo`.
+`make veristat` loads the object with veristat on **your** kernel (needs
+`sudo`) — a quick check that every program passes the verifier, plus
+per-program complexity.
 
-A BPF program that loads on your laptop can be rejected by an older kernel's
-verifier. `.github/workflows/kernel-matrix.yml` guards against that: for each
-kernel in its matrix it builds `bin/probe.bpf.o`, boots that kernel in a VM
-([cilium's little-vm-helper](https://github.com/cilium/little-vm-helper), images
-from `quay.io/lvh-images`), and runs the vendored static **veristat** against the
-object — failing the job if the verifier rejects any program. The check is
-`build/verify-kernel.sh`.
-
-Edit `matrix.kernel` to the kernels you care about (tags at
-[quay.io/lvh-images/kind](https://quay.io/repository/lvh-images/kind?tab=tags);
-`<ver>-main` tracks the newest build of each line). A program using a feature
-newer than a listed kernel will fail there by design — that failure *is* the
-signal of your minimum kernel.
-
-To run the same matrix **locally** (Linux + KVM), `make veristat-matrix` — it
-boots those kernel images with [`lvh`](https://github.com/cilium/little-vm-helper)
-+ QEMU and prints an `ok`/`FAIL` grid. Pick kernels with
-`make veristat-matrix KERNELS="6.6-main bpf-next-main"`. Both `lvh` and a static
-`qemu` are fetched on demand (VM infra, not part of the build toolchain) — the
-vendored static qemu comes from the toolchain release, checksum-pinned in
-`build/toolchain.lock`, falling back to a system `qemu-system` if absent.
-
-> Requires a toolchain pin (`build/toolchain.lock`) that ships `veristat`; the
-> workflow says so explicitly if the pinned version predates it.
-
-`#/` (project root) and `@/` (source root) are **bundle-time aliases** that
-esbuild resolves via tsconfig `paths`; the runtime resolver doesn't know them,
-which is why the BPF object is located with `import.meta.dirname`.
-
-## npm / jsr packages
-
-The starter needs no third-party packages — it imports only `yeet:*` builtins
-and local `@/` modules, so `make` builds with no npm/node and no `node_modules`.
-
-To pull in a dependency, add it to `package.json` and install it into
-`node_modules` with whatever package manager you like (`npm`, `pnpm`, `bun`, …)
-— esbuild inlines whatever it finds there at bundle time. Only packages that
-run in bare V8 work: no Node builtins (`fs`, `net`, …), and no `Intl` /
-`TextEncoder` / `TextDecoder`.
-
-## Pure-JS scripts
-
-Don't need BPF? Delete `src/bpf/`, `bin/`, and `src/probes/cpusched.js`, then
-feed the components from any source that exposes the same signals.
+A program that loads on your laptop can still be rejected by an older
+kernel's verifier. `.github/workflows/kernel-matrix.yml` builds the
+object, boots each kernel in its matrix in a VM
+([cilium's little-vm-helper](https://github.com/cilium/little-vm-helper)),
+and fails if any verifier rejects it. Run the same matrix locally
+(Linux + KVM) with `make veristat-matrix KERNELS="6.6-main bpf-next-main"`.
 
 ## Prerequisites
 
-- `clang` and `bpftool` (for the BPF leg; `bpftool` generates
-  `src/bpf/include/vmlinux.h` from the host kernel, which needs `CONFIG_DEBUG_INFO_BTF`)
-
-No node/npm is required: esbuild is vendored by the toolchain, and the starter
-has no third-party deps. (You only need a package manager if you add npm/jsr
-dependencies of your own — see *npm / jsr packages* above.)
+- Linux with `CONFIG_DEBUG_INFO_BTF` (for `vmlinux.h` generation and
+  CO-RE-free BTF loading)
+- root (or CAP_BPF + CAP_NET_ADMIN) to load and attach the tap

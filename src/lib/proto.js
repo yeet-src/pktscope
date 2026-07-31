@@ -10,10 +10,10 @@
 export const TCP = 6;
 export const UDP = 17;
 
-export const PROTO_NAMES = { 1: "icmp", 2: "igmp", 6: "tcp", 17: "udp", 47: "gre", 50: "esp", 58: "icmp6", 132: "sctp" };
+const PROTO_NAMES = { 1: "icmp", 2: "igmp", 6: "tcp", 17: "udp", 47: "gre", 50: "esp", 58: "icmp6", 132: "sctp" };
 
 export const ETH_P_ARP = 0x0806;
-export const ETHERTYPES = {
+const ETHERTYPES = {
   0x0800: "ipv4", 0x0806: "arp", 0x8035: "rarp", 0x8100: "vlan",
   0x86dd: "ipv6", 0x8863: "pppoe", 0x88cc: "lldp", 0x88e5: "macsec",
 };
@@ -48,7 +48,7 @@ export function macStr(d, off = 0) {
   return s;
 }
 
-export const etName = (t) => ETHERTYPES[t] ?? `0x${(t ?? 0).toString(16).padStart(4, "0")}`;
+const etName = (t) => ETHERTYPES[t] ?? `0x${(t ?? 0).toString(16).padStart(4, "0")}`;
 
 // The list/search protocol label: the L4 name for IP, the ethertype for
 // link-level frames.
@@ -59,11 +59,11 @@ const TCP_FLAGS = [
   [0x02, "SYN"], [0x01, "FIN"], [0x04, "RST"], [0x08, "PSH"],
   [0x20, "URG"], [0x10, "ACK"], [0x40, "ECE"], [0x80, "CWR"],
 ];
-export function flagNames(f) {
+function flagNames(f) {
   return TCP_FLAGS.filter(([b]) => f & b).map(([, n]) => n).join(",");
 }
 
-export function asciiOf(d, max = d.length) {
+function asciiOf(d, max = d.length) {
   let s = "";
   const n = Math.min(d.length, max);
   for (let i = 0; i < n; i++) {
