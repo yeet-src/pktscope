@@ -1,0 +1,8 @@
+{
+  "name": "pktscope",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "pktscope — a Wireshark-style terminal packet analyzer: live packet list, folding protocol detail tree, section-colored hex with field-to-byte highlighting. Works on raw-IP tunnel devices.",
+  "dependencies": {}
+}

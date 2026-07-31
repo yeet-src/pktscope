@@ -1,0 +1,12 @@
+# build artifacts
+/node_modules/
+/src/index.jsx
+/.build/
+
+# compiled BPF objects + generated CO-RE header
+/bin/*
+!/bin/.gitkeep
+/src/bpf/include/vmlinux.h
+
+# kernel-matrix run output (build/kernel-matrix.sh)
+/.kmatrix/
