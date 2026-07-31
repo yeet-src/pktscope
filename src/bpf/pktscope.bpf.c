@@ -271,6 +271,11 @@ static __always_inline int tap(struct __sk_buff *skb, __u8 dir)
 	if (copy > CAP) {
 		copy = CAP;
 	}
+	/* The second barrier hides the clamp from clang: knowing copy <= CAP
+	 * it would fold the signed compare back into != 0, which pre-6.8
+	 * verifiers don't turn into a lower bound.
+	 */
+	barrier_var(copy);
 	if ((__s32)copy > 0 &&
 	    bpf_skb_load_bytes_relative(skb, 0, e->data, copy, anchor) < 0) {
 		e->caplen = 0;
