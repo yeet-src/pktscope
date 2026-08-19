@@ -261,6 +261,10 @@ function quit() {
 
 /* --- input --- */
 
+// Ask the terminal to report mouse events; without this the wheel/click/drag
+// handlers below are registered but never fire.
+tty.enableMouse();
+
 const isUp = (c, k) => c === "ArrowUp" || k === "k";
 const isDown = (c, k) => c === "ArrowDown" || k === "j";
 const isEnter = (c) => c === "Enter" || c === "Return";
