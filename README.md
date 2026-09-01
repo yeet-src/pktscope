@@ -1,4 +1,4 @@
-<!-- yeet:user-friendly-title: Analyze live network packets -->
+<!-- yeet:user-friendly-title: Analyze live network traffic -->
 # `pktscope`
 
 > **Wireshark's three panes, in the terminal, on any interface.** Including the raw-IP tunnel devices where tcpdump's ethernet assumptions break.
