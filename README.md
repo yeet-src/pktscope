@@ -63,7 +63,7 @@ make               # compile bin/probe.bpf.o + bundle the JS (toolchain auto-fet
 yeet run . --tty   # the interface picker; pick one to start capturing
 ```
 
-With no flags you land on the interface picker: every device with its kind, addresses, and live rx/tx rates, so you can see which one is actually carrying traffic before you commit to watching it. `lo` is listed but not selectable. Pick a row and the panes fill as packets arrive.
+With no flags you land on the interface picker: every device with its kind, addresses, and live rx/tx rates, so you can see which one is actually carrying traffic before you commit to watching it. Pick a row and the panes fill as packets arrive.
 
 Script flags go **after `--`** so the runtime routes them to the script rather than consuming them itself, which is the most common first-run mistake. Flags belonging to `yeet run` itself (`--tty`, `--quiet`, `--watch`, and so on) go *before* the `--`.
 
@@ -258,7 +258,6 @@ TCX (the successor to `clsact` tc-BPF) sits at the point where the per-interface
 - **Frames are truncated at 1536 bytes.** Enough for a full untagged ethernet MTU frame, but a jumbo frame or a large TSO segment is captured partially. The list shows both wire length and captured length so truncation is always visible.
 - **1536 bytes is measured from the first captured byte.** On a raw-IP device that is the IP header, so the effective payload budget differs slightly from an ethernet device.
 - **The ring holds 4000 packets.** Past that the oldest 512 are dropped in a batch. There is no disk spill and no pcap export, so a capture you want to keep has to be read while it is on screen.
-- **Loopback cannot be captured.** The picker marks `lo` as unselectable with `tcx can't attach here`. Traffic between two processes on the same host is out of reach, which includes a container talking to a host service over `127.0.0.1`.
 - **IPv6 extension headers are not walked.** The L4 offset assumes the common no-extension case, and the protocol shown is the first next-header value. A packet carrying a routing or fragment header decodes its L4 fields from the wrong offset.
 - **IPv4 fragments are not reassembled.** Fragment flags and offsets are shown; only the first fragment carries a decodable L4 header.
 - **DNS decoding is UDP port 53 only.** DNS over TCP, DoT, and DoH are not decoded as DNS. Name compression pointers end the label walk rather than being followed.

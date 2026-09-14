@@ -37,7 +37,7 @@ import { clamp } from "@/lib/format.js";
 import DetailTree, { detailView } from "@/components/detailtree.jsx";
 import Footer from "@/components/footer.jsx";
 import HexPane from "@/components/hexpane.jsx";
-import Picker, { selectable } from "@/components/picker.jsx";
+import Picker from "@/components/picker.jsx";
 import PktList, { listView } from "@/components/pktlist.jsx";
 import TitleBar from "@/components/titlebar.jsx";
 
@@ -292,7 +292,7 @@ tty.on("keydown", (e) => {
     else if (isDown(c, k)) pSel.set(Math.min(Math.max(0, rows.length - 1), pSel.get() + 1));
     else if (isEnter(c) || c === "ArrowRight" || k === "l") {
       const r = rows[Math.min(pSel.get(), Math.max(0, rows.length - 1))];
-      if (r && selectable(r)) startCapture([r]);
+      if (r) startCapture([r]);
     }
     return;
   }

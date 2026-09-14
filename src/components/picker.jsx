@@ -1,7 +1,6 @@
 // Interface picker: a live table (name, state, kind, address, packet rates)
 // navigated with ↑↓, ⏎ to start capturing. One column spec drives the header
-// and the rows, and columns drop by priority on a narrow terminal. `lo` is
-// listed but not selectable — the kernel refuses TCX there.
+// and the rows, and columns drop by priority on a narrow terminal.
 import { Box, Text } from "yeet:tui";
 
 import { ifaces } from "@/probes/ifaces.js";
@@ -9,8 +8,6 @@ import {
   C_BAD, C_BRAND, C_DIM, C_FAINT, C_RX, C_SEL_BG, C_SEL_FG, C_TX,
   cellText, fitCols, fmtCount, headerLine,
 } from "@/lib/format.js";
-
-export const selectable = (r) => r.kind !== "loopback";
 
 const SPEC = [
   { key: "mark", label: "", w: 1 },
@@ -20,7 +17,6 @@ const SPEC = [
   { key: "addr", label: "address", flex: 1, min: 10, max: 40 },
   { key: "rx", label: "rx/s", w: 8, align: "r", prio: 4 },
   { key: "tx", label: "tx/s", w: 8, align: "r", prio: 4 },
-  { key: "note", label: "", flex: 2, min: 0, prio: 1 },
 ];
 
 export default ({ sel, height, width }) => (
@@ -47,7 +43,6 @@ export default ({ sel, height, width }) => (
             addr: r.addrs[0] ?? "—",
             rx: r.rx == null ? "—" : fmtCount(r.rx),
             tx: r.tx == null ? "—" : fmtCount(r.tx),
-            note: selectable(r) ? "" : "tcx can't attach here",
           };
           const line = cols.reduce(
             (acc, c, ci) => acc + cellText(c, value[c.key]) + (ci === cols.length - 1 ? "" : " "),
@@ -69,7 +64,6 @@ export default ({ sel, height, width }) => (
             addr: C_DIM,
             rx: C_RX,
             tx: C_TX,
-            note: C_FAINT,
           };
           return (
             <Text height="1" break="none">
