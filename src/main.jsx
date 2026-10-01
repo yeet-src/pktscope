@@ -254,8 +254,22 @@ async function leaveCapture() {
   searching.set(false);
 }
 
-function quit() {
-  cap.stop();
+/* Quit is sequential: unsubscribe, stop the BPF object (which resolves only
+ * once the kernel-side teardown is done), then exit. Exiting with those calls
+ * in flight races the isolate's own teardown against them in the daemon and
+ * can leave the TCX hooks attached. The wait is bounded so a wedged daemon
+ * can't pin the screen.
+ */
+const QUIT_GRACE_MS = 12000;
+let quitting = false;
+
+async function quit() {
+  if (quitting) return;
+  quitting = true;
+  await Promise.race([
+    cap.stop().catch(() => {}),
+    new Promise((r) => setTimeout(r, QUIT_GRACE_MS)),
+  ]);
   setTimeout(() => yeet.exit(), 0);
 }
 
@@ -268,6 +282,13 @@ const isEnter = (c) => c === "Enter" || c === "Return";
 tty.on("keydown", (e) => {
   const c = e.code;
   const k = e.key ?? "";
+
+  // Ctrl-C always quits through our path, even mid-search. preventDefault
+  // suppresses the runtime's own kill, which would tear down a second time.
+  if (e.ctrlKey && k === "c") {
+    e.preventDefault();
+    return quit();
+  }
 
   if (searching.get()) {
     if (c === "Escape") {
@@ -284,7 +305,7 @@ tty.on("keydown", (e) => {
     return;
   }
 
-  if (k === "q" || (e.ctrlKey && k === "c")) return quit();
+  if (k === "q") return quit();
 
   if (view.get() === "picker") {
     const rows = ifaces.get();
