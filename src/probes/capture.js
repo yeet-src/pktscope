@@ -21,6 +21,7 @@ export const status = signal({ running: false, ifaces: [], error: null, blob: nu
 export const stats = signal({ total: 0, rx: 0, bytes: 0, kinds: {} });
 
 let session = null;
+let starting = null; // in-flight startScope(), so stop() can wait for it
 let timer = null;
 let dirty = false;
 let seq = 0;
@@ -54,11 +55,15 @@ export async function start(ifaces, opts = {}) {
   clear();
   status.set({ running: true, ifaces, error: null, blob: null });
 
+  const pending = startScope({ ifaces, ...opts }, onPacket);
+  starting = pending;
   try {
-    session = await startScope({ ifaces, ...opts }, onPacket);
+    session = await pending;
   } catch (e) {
     status.set({ running: false, ifaces, error: String(e?.message ?? e), blob: null });
     return;
+  } finally {
+    if (starting === pending) starting = null;
   }
   status.set({ running: true, ifaces, error: null, blob: session.id });
 
@@ -74,6 +79,13 @@ export async function start(ifaces, opts = {}) {
 export async function stop() {
   if (timer) clearInterval(timer);
   timer = null;
+  // A stop that lands mid-attach must wait for the attach to finish, or the
+  // BPF object is left running with nobody to stop it.
+  if (starting) {
+    try {
+      await starting;
+    } catch {}
+  }
   const s = session;
   session = null;
   if (s) {

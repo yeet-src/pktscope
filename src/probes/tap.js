@@ -36,6 +36,9 @@ function normalize(e) {
   };
 }
 
+// Time for the daemon's ring consumer to drain after the scope is disarmed.
+const SETTLE_MS = 300;
+
 export async function startScope({ ifaces, port = 0, proto = 0 }, onPacket) {
   const ifindexes = ifaces.map((i) => i.index);
   const obj = new BpfObject({ exe: "../bin/probe.bpf.o", base: import.meta.dirname });
@@ -69,6 +72,14 @@ export async function startScope({ ifaces, port = 0, proto = 0 }, onPacket) {
   return {
     id: control.id,
     async stop() {
+      // Disarm first and let the ring drain. Stopping the object while
+      // packets are still landing in the ring buffer wedges the daemon's
+      // teardown (the kill never runs and the TCX hooks stay attached); with
+      // the scope off, the same stop completes.
+      try {
+        await scope.update(0, { port, proto, on: 0 });
+      } catch {}
+      await new Promise((r) => setTimeout(r, SETTLE_MS));
       try {
         await sub.unsubscribe();
       } catch {}
